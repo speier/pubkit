@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-const fileKeySize = 32
+const keySize = 32
 
 var b64 = base64.RawStdEncoding.Strict()
 
@@ -36,8 +36,8 @@ func GenerateKeys() ([]byte, []byte, error) {
 
 // seal data with recipients pub key
 func Seal(data []byte, pubkey ...[]byte) (*proto.Envelope, error) {
-	fileKey := make([]byte, fileKeySize)
-	_, err := rand.Read(fileKey)
+	masterKey := make([]byte, keySize)
+	_, err := rand.Read(masterKey)
 	if err != nil {
 		return nil, err
 	}
@@ -49,28 +49,28 @@ func Seal(data []byte, pubkey ...[]byte) (*proto.Envelope, error) {
 			return nil, err
 		}
 
-		sharedSecret, err := calcSharedSecret(ephemeralPrv, rpubkey)
+		sharedSecret, err := getSharedSecret(ephemeralPrv, rpubkey)
 		if err != nil {
 			return nil, err
 		}
 
-		wrappingKey, err := makeWrappingKey(sharedSecret, ephemeralPub, rpubkey)
+		wrapKey, err := deriveWrapKey(sharedSecret, ephemeralPub, rpubkey)
 		if err != nil {
 			return nil, err
 		}
 
-		wrappedKey, err := primitives.EncryptAEAD(wrappingKey, fileKey)
+		rcptsKey, err := primitives.EncryptAEAD(wrapKey, masterKey)
 		if err != nil {
 			return nil, err
 		}
 
 		recipients = append(recipients, &proto.Recipient{
 			PubKey: b64.EncodeToString(ephemeralPub),
-			DocKey: wrappedKey,
+			DocKey: rcptsKey,
 		})
 	}
 
-	encBody, err := primitives.EncryptAEAD(fileKey, data)
+	encBody, err := primitives.EncryptAEAD(masterKey, data)
 	if err != nil {
 		return nil, err
 	}
@@ -95,22 +95,22 @@ func Open(envelope *proto.Envelope, prvkey []byte) ([]byte, error) {
 			continue
 		}
 
-		sharedSecret, err := calcSharedSecret(prvkey, rpubkey)
+		sharedSecret, err := getSharedSecret(prvkey, rpubkey)
 		if err != nil {
 			return nil, err
 		}
 
-		wrappingKey, err := makeWrappingKey(sharedSecret, rpubkey, pubkey)
+		wrapKey, err := deriveWrapKey(sharedSecret, rpubkey, pubkey)
 		if err != nil {
 			return nil, err
 		}
 
-		fileKey, err := primitives.DecryptAEAD(wrappingKey, r.DocKey)
+		bodyKey, err := primitives.DecryptAEAD(wrapKey, r.DocKey)
 		if err != nil {
 			continue
 		}
 
-		decBody, err := primitives.DecryptAEAD(fileKey, envelope.Body)
+		decBody, err := primitives.DecryptAEAD(bodyKey, envelope.Body)
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -122,24 +122,25 @@ func Open(envelope *proto.Envelope, prvkey []byte) ([]byte, error) {
 	return nil, nil
 }
 
-func calcSharedSecret(prvkey, pubkey []byte) ([]byte, error) {
+func getSharedSecret(prvkey, pubkey []byte) ([]byte, error) {
 	sharedSecret, err := curve25519.X25519(prvkey, pubkey)
 	if err != nil {
 		return nil, err
 	}
+
 	return sharedSecret, nil
 }
 
-func makeWrappingKey(sharedSecret, ephemeralPub, pubkey []byte) ([]byte, error) {
+func deriveWrapKey(sharedSecret, ephemeralPub, pubkey []byte) ([]byte, error) {
 	salt := make([]byte, 0, len(ephemeralPub)+len(pubkey))
 	salt = append(salt, ephemeralPub...)
 	salt = append(salt, pubkey...)
 
 	h := hkdf.New(sha256.New, sharedSecret, salt, nil)
-	wrappingKey := make([]byte, chacha20poly1305.KeySize)
-	if _, err := io.ReadFull(h, wrappingKey); err != nil {
+	key := make([]byte, chacha20poly1305.KeySize)
+	if _, err := io.ReadFull(h, key); err != nil {
 		return nil, err
 	}
 
-	return wrappingKey, nil
+	return key, nil
 }
