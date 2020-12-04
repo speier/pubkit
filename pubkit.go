@@ -30,6 +30,10 @@ func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 }
 
 func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
+	if envelope == nil {
+		return nil, errors.New("envelope is nil, must be specified")
+	}
+
 	res, err := x25519.Open(envelope, prvkey)
 	if err != nil {
 		return nil, err
