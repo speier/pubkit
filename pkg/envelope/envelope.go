@@ -1,4 +1,4 @@
-package proto
+package envelope
 
 type Recipient struct {
 	PubKey string

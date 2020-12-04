@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/speier/pubkit/internal/primitives"
-	"github.com/speier/pubkit/internal/proto"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
+
+	"github.com/speier/pubkit/internal/primitives"
+	"github.com/speier/pubkit/pkg/envelope"
 )
 
 const keySize = 32
@@ -35,14 +36,14 @@ func GenerateKeys() ([]byte, []byte, error) {
 }
 
 // seal data with recipients pub key
-func Seal(data []byte, pubkey ...[]byte) (*proto.Envelope, error) {
+func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 	masterKey := make([]byte, keySize)
 	_, err := rand.Read(masterKey)
 	if err != nil {
 		return nil, err
 	}
 
-	recipients := make([]*proto.Recipient, 0)
+	recipients := make([]*envelope.Recipient, 0)
 	for _, rpubkey := range pubkey {
 		ephemeralPub, ephemeralPrv, err := GenerateKeys()
 		if err != nil {
@@ -64,7 +65,7 @@ func Seal(data []byte, pubkey ...[]byte) (*proto.Envelope, error) {
 			return nil, err
 		}
 
-		recipients = append(recipients, &proto.Recipient{
+		recipients = append(recipients, &envelope.Recipient{
 			PubKey: b64.EncodeToString(ephemeralPub),
 			DocKey: rcptsKey,
 		})
@@ -75,15 +76,15 @@ func Seal(data []byte, pubkey ...[]byte) (*proto.Envelope, error) {
 		return nil, err
 	}
 
-	return &proto.Envelope{
+	return &envelope.Envelope{
 		Recipients: recipients,
 		Body:       encBody,
 	}, nil
 }
 
 // open data with private key
-func Open(envelope *proto.Envelope, prvkey []byte) ([]byte, error) {
-	// pub calced from priv
+func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
+	// pub derived from priv
 	pubkey, err := curve25519.X25519(prvkey, curve25519.Basepoint)
 	if err != nil {
 		return nil, err

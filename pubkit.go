@@ -1,31 +1,39 @@
 package pubkit
 
 import (
-	"github.com/speier/pubkit/internal/proto"
+	"errors"
+
 	"github.com/speier/pubkit/internal/x25519"
+	"github.com/speier/pubkit/pkg/envelope"
 )
 
-// must generate x25519 key pair
-func GenerateKeys() ([]byte, []byte) {
+func GenerateKeys() ([]byte, []byte, error) {
 	pubkey, prvkey, err := x25519.GenerateKeys()
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	return pubkey, prvkey
+
+	return pubkey, prvkey, nil
 }
 
-func Seal(data []byte, pubkey ...[]byte) *proto.Envelope {
+func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
+	if len(pubkey) == 0 {
+		return nil, errors.New("one or more public key must be specified")
+	}
+
 	envelope, err := x25519.Seal(data, pubkey...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return envelope
+
+	return envelope, nil
 }
 
-func Open(envelope *proto.Envelope, prvkey []byte) []byte {
+func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
 	res, err := x25519.Open(envelope, prvkey)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return res
+
+	return res, nil
 }
