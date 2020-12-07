@@ -1,6 +1,7 @@
 package pubkit
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 
@@ -58,13 +59,31 @@ func Append(envelope *envelope.Envelope, prvkey []byte, pubkey ...[]byte) (*enve
 		return nil, err
 	}
 
+	// collect existing recipients keys
+	rcptkeys := make([][]byte, 0)
 	for _, rcpt := range envelope.Recipients {
 		rpk, err := b64.DecodeString(rcpt.PubKey)
 		if err != nil {
 			return nil, err
 		}
-		pubkey = append(pubkey, []byte(rpk))
+		rcptkeys = append(rcptkeys, rpk)
 	}
 
-	return Seal(data, pubkey...)
+	// append new recipients if not exists
+	for _, pubk := range pubkey {
+		if !contains(rcptkeys, pubk) {
+			rcptkeys = append(rcptkeys, pubk)
+		}
+	}
+
+	return Seal(data, rcptkeys...)
+}
+
+func contains(in [][]byte, a []byte) bool {
+	for _, b := range in {
+		if bytes.Compare(a, b) == 0 {
+			return true
+		}
+	}
+	return false
 }
