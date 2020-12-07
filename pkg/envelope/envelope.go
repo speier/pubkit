@@ -1,8 +1,9 @@
 package envelope
 
 type Recipient struct {
-	PubKey string
-	DocKey []byte
+	PubKey  string
+	EPubKey string
+	DocKey  []byte
 }
 
 type Envelope struct {

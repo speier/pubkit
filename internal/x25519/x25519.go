@@ -1,10 +1,10 @@
 package x25519
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"io"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -35,7 +35,7 @@ func GenerateKeys() ([]byte, []byte, error) {
 	return pubkey, prvkey, nil
 }
 
-// seal data with recipients pub key
+// seal data with recipients public key
 func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 	masterKey := make([]byte, keySize)
 	_, err := rand.Read(masterKey)
@@ -66,8 +66,9 @@ func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 		}
 
 		recipients = append(recipients, &envelope.Recipient{
-			PubKey: b64.EncodeToString(ephemeralPub),
-			DocKey: rcptsKey,
+			PubKey:  b64.EncodeToString(rpubkey),
+			EPubKey: b64.EncodeToString(ephemeralPub),
+			DocKey:  rcptsKey,
 		})
 	}
 
@@ -91,7 +92,7 @@ func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
 	}
 
 	for _, r := range envelope.Recipients {
-		rpubkey, err := b64.DecodeString(r.PubKey)
+		rpubkey, err := b64.DecodeString(r.EPubKey)
 		if err != nil {
 			continue
 		}
@@ -113,7 +114,6 @@ func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
 
 		decBody, err := primitives.DecryptAEAD(bodyKey, envelope.Body)
 		if err != nil {
-			fmt.Println(err)
 			continue
 		}
 
@@ -121,6 +121,54 @@ func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+// open with private key and update data
+func Update(envelope *envelope.Envelope, prvkey []byte, data []byte) (*envelope.Envelope, error) {
+	// check if user can open
+	_, err := Open(envelope, prvkey)
+	if err != nil {
+		return nil, err
+	}
+
+	// collect existing recipients keys
+	rcptkeys := make([][]byte, 0)
+	for _, rcpt := range envelope.Recipients {
+		rpk, err := b64.DecodeString(rcpt.PubKey)
+		if err != nil {
+			return nil, err
+		}
+		rcptkeys = append(rcptkeys, rpk)
+	}
+
+	return Seal(data, rcptkeys...)
+}
+
+// open with private key and append one or more recipients' public key
+func Append(envelope *envelope.Envelope, prvkey []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
+	data, err := Open(envelope, prvkey)
+	if err != nil {
+		return nil, err
+	}
+
+	// collect existing recipients keys
+	rcptkeys := make([][]byte, 0)
+	for _, rcpt := range envelope.Recipients {
+		rpk, err := b64.DecodeString(rcpt.PubKey)
+		if err != nil {
+			return nil, err
+		}
+		rcptkeys = append(rcptkeys, rpk)
+	}
+
+	// append new recipients if not exists
+	for _, pubk := range pubkey {
+		if !contains(rcptkeys, pubk) {
+			rcptkeys = append(rcptkeys, pubk)
+		}
+	}
+
+	return Seal(data, rcptkeys...)
 }
 
 func getSharedSecret(prvkey, pubkey []byte) ([]byte, error) {
@@ -144,4 +192,13 @@ func deriveWrapKey(sharedSecret, ephemeralPub, pubkey []byte) ([]byte, error) {
 	}
 
 	return key, nil
+}
+
+func contains(in [][]byte, a []byte) bool {
+	for _, b := range in {
+		if bytes.Compare(a, b) == 0 {
+			return true
+		}
+	}
+	return false
 }

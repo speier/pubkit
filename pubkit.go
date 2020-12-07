@@ -1,16 +1,22 @@
 package pubkit
 
 import (
-	"bytes"
-	"encoding/base64"
 	"errors"
 
 	"github.com/speier/pubkit/internal/x25519"
 	"github.com/speier/pubkit/pkg/envelope"
 )
 
-var b64 = base64.RawStdEncoding.Strict()
+// must generate new public/private key pair
+func MustGenerateKeys() ([]byte, []byte) {
+	pub, prv, err := GenerateKeys()
+	if err != nil {
+		panic(err)
+	}
+	return pub, prv
+}
 
+// generate new public/private key pair
 func GenerateKeys() ([]byte, []byte, error) {
 	pubkey, prvkey, err := x25519.GenerateKeys()
 	if err != nil {
@@ -20,7 +26,11 @@ func GenerateKeys() ([]byte, []byte, error) {
 	return pubkey, prvkey, nil
 }
 
+// seal data with recipients public key
 func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
+	if len(data) == 0 {
+		return nil, errors.New("data must be specified")
+	}
 	if len(pubkey) == 0 {
 		return nil, errors.New("one or more public key must be specified")
 	}
@@ -33,19 +43,47 @@ func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 	return envelope, nil
 }
 
+// open data with private key
 func Open(envelope *envelope.Envelope, prvkey []byte) ([]byte, error) {
 	if envelope == nil {
 		return nil, errors.New("envelope is nil, must be specified")
+	}
+	if len(prvkey) == 0 {
+		return nil, errors.New("private key must be specified")
 	}
 
 	res, err := x25519.Open(envelope, prvkey)
 	if err != nil {
 		return nil, err
 	}
+	if len(res) == 0 {
+		return nil, errors.New("failed to open")
+	}
 
 	return res, nil
 }
 
+// open with private key and update data
+func Update(envelope *envelope.Envelope, prvkey []byte, data []byte) (*envelope.Envelope, error) {
+	if envelope == nil {
+		return nil, errors.New("envelope is nil, must be specified")
+	}
+	if len(prvkey) == 0 {
+		return nil, errors.New("private key must be specified")
+	}
+	if len(data) == 0 {
+		return nil, errors.New("data must be specified")
+	}
+
+	envelope, err := x25519.Update(envelope, prvkey, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return envelope, nil
+}
+
+// open with private key and append one or more recipients' public key
 func Append(envelope *envelope.Envelope, prvkey []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 	if envelope == nil {
 		return nil, errors.New("envelope is nil, must be specified")
@@ -54,36 +92,10 @@ func Append(envelope *envelope.Envelope, prvkey []byte, pubkey ...[]byte) (*enve
 		return nil, errors.New("one or more public key must be specified")
 	}
 
-	data, err := Open(envelope, prvkey)
+	envelope, err := x25519.Append(envelope, prvkey, pubkey...)
 	if err != nil {
 		return nil, err
 	}
 
-	// collect existing recipients keys
-	rcptkeys := make([][]byte, 0)
-	for _, rcpt := range envelope.Recipients {
-		rpk, err := b64.DecodeString(rcpt.PubKey)
-		if err != nil {
-			return nil, err
-		}
-		rcptkeys = append(rcptkeys, rpk)
-	}
-
-	// append new recipients if not exists
-	for _, pubk := range pubkey {
-		if !contains(rcptkeys, pubk) {
-			rcptkeys = append(rcptkeys, pubk)
-		}
-	}
-
-	return Seal(data, rcptkeys...)
-}
-
-func contains(in [][]byte, a []byte) bool {
-	for _, b := range in {
-		if bytes.Compare(a, b) == 0 {
-			return true
-		}
-	}
-	return false
+	return envelope, nil
 }
