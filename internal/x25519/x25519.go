@@ -77,10 +77,7 @@ func Seal(data []byte, pubkey ...[]byte) (*envelope.Envelope, error) {
 		return nil, err
 	}
 
-	return &envelope.Envelope{
-		Recipients: recipients,
-		Body:       encBody,
-	}, nil
+	return envelope.NewEnvelope(envelope.V1, recipients, encBody), nil
 }
 
 // open data with private key
