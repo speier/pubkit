@@ -1,7 +1,7 @@
 package envelope
 
 const (
-	V1 = ""
+	V1 = "1.0"
 )
 
 type Recipient struct {
